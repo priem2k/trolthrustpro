@@ -1527,16 +1527,26 @@ def generate_pinterest_rss_feed(reviews):
     """
     Menghasilkan file public/feed.xml (RSS 2.0 + Media RSS) yang 100% kompatibel
     dengan fitur 'Auto-Publish from RSS' di Pinterest Business.
-    Otomatis membuat gambar kartu Pin vertikal 1000x1500 px (.png) untuk setiap artikel review!
     """
     now_rfc822 = email.utils.format_datetime(datetime.datetime.now(datetime.timezone.utc))
     items_xml = ""
 
-    # Ambil 30 artikel review terbaru (termasuk +3 artikel baru hari ini)
+    # FUNGSI BANTUAN UNTUK MEMBERSIHKAN KARAKTER KHUSUS XML
+    def xml_safe(text):
+        if not text:
+            return ""
+        return (str(text)
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace('"', "&quot;")
+                .replace("'", "&apos;"))
+
+    # Ambil 30 artikel review terbaru
     for idx, rev in enumerate(reviews[:30]):
         article_url = f"{BASE_URL}/{rev['slug']}.html"
 
-        # Konversi tanggal YYYY-MM-DD artikel ke format RFC-822 yang diwajibkan Pinterest
+        # Konversi tanggal
         try:
             dt_obj = datetime.datetime.strptime(rev["published_date"], "%Y-%m-%d").replace(
                 hour=6, minute=(idx % 60), second=0, tzinfo=datetime.timezone.utc
@@ -1545,54 +1555,49 @@ def generate_pinterest_rss_feed(reviews):
         except Exception:
             pub_date_rfc = now_rfc822
 
-        # Buat teks poster Pin Vertikal 1000x1500 (.png) otomatis tanpa perlu library tambahan
+        # Buat gambar Pin
         pin_headline = f"{rev['product_name']}\nRating: {rev['rating_score']}/5.0 Stars\n{rev['spec_1']}\nRead Review & Calculator"
         encoded_pin_text = urllib.parse.quote(pin_headline)
-        # URL gambar .png ukuran 1000x1500 (rasio 2:3 standar Pinterest) latar abu-abu gelap & teks emas
         pin_image_url = f"https://placehold.co/1000x1500/1f2937/fbbf24.png?text={encoded_pin_text}&font=montserrat"
 
-        # Bersihkan karakter XML pada judul dan deskripsi
-        clean_title = (
-            rev["title"]
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace('"', "&quot;")
-        )
-        clean_desc = (
-            f"{rev['summary']} Key Specs: {rev['spec_1']} | {rev['spec_2']} | {rev['spec_3']}. "
-            f"Use our free interactive calculator and check the latest Amazon price."
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-        )
+        # Bersihkan SEMUA variabel teks dengan fungsi xml_safe
+        safe_title = xml_safe(rev["title"])
+        safe_url = xml_safe(article_url)
+        safe_desc = xml_safe(f"{rev['summary']} Key Specs: {rev['spec_1']} | {rev['spec_2']} | {rev['spec_3']}. Use our free interactive calculator and check the latest Amazon price.")
+        safe_img_url = xml_safe(pin_image_url)
 
         items_xml += f"""    <item>
-      <title>{clean_title}</title>
-      <link>{article_url}</link>
-      <guid isPermaLink="true">{article_url}</guid>
+      <title>{safe_title}</title>
+      <link>{safe_url}</link>
+      <guid isPermaLink="true">{safe_url}</guid>
       <pubDate>{pub_date_rfc}</pubDate>
-      <description>{clean_desc}</description>
-      <enclosure url="{pin_image_url}" length="150000" type="image/png" />
-      <media:content url="{pin_image_url}" type="image/png" medium="image" width="1000" height="1500" />
+      <description>{safe_desc}</description>
+      <enclosure url="{safe_img_url}" length="150000" type="image/png" />
+      <media:content url="{safe_img_url}" type="image/png" medium="image" width="1000" height="1500" />
     </item>\n"""
+
+    # Bersihkan juga judul channel dan deskripsi
+    safe_site_name = xml_safe(SITE_NAME)
+    safe_site_tagline = xml_safe(SITE_TAGLINE)
+    safe_base_url = xml_safe(BASE_URL)
 
     rss_content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"
      xmlns:media="http://search.yahoo.com/mrss/"
      xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>{SITE_NAME} — {SITE_TAGLINE}</title>
-    <link>{BASE_URL}/</link>
-    <description>Daily product reviews, technical sizing calculators, and side-by-side gear comparisons on {SITE_NAME}.</description>
+    <title>{safe_site_name} — {safe_site_tagline}</title>
+    <link>{safe_base_url}/</link>
+    <description>Daily product reviews, technical sizing calculators, and side-by-side gear comparisons on {safe_site_name}.</description>
     <language>en-us</language>
     <lastBuildDate>{now_rfc822}</lastBuildDate>
-    <atom:link href="{BASE_URL}/feed.xml" rel="self" type="application/rss+xml" />
+    <atom:link href="{safe_base_url}/feed.xml" rel="self" type="application/rss+xml" />
 {items_xml}  </channel>
 </rss>"""
 
     with open(os.path.join(OUTPUT_DIR, "feed.xml"), "w", encoding="utf-8") as f:
         f.write(rss_content)
+
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     generated_urls = []
